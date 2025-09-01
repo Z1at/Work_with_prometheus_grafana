@@ -1,7 +1,7 @@
 env:
 	cp .env.example .env
 
-db:
+up:
 	docker-compose up -d
 
 req:

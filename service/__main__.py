@@ -1,9 +1,12 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from uvicorn import run
 from endpoints import list_of_routes
 from configs import *
 from utils import get_hostname
 from dotenv import load_dotenv
+
+from prometheus_client import Counter, generate_latest
+from fastapi.responses import Response
 
 
 def bind_routes(application: FastAPI, settings: DefaultSettings) -> None:
@@ -43,6 +46,41 @@ def get_app() -> FastAPI:
 
 
 app = get_app()
+
+REQUEST_COUNT = Counter(
+    'http_requests_total',
+    'Total HTTP Requests',
+    ['method', 'endpoint', 'status_code']
+)
+
+
+@app.middleware("http")
+async def collect_metrics(request: Request, call_next):
+    method = request.method
+    endpoint = request.url.path
+
+    try:
+        response = await call_next(request)
+        status_code = str(response.status_code)
+
+        # Записываем метрики
+        REQUEST_COUNT.labels(method=method, endpoint=endpoint, status_code=status_code).inc()
+
+        return response
+
+    except Exception as e:
+        # Обрабатываем ошибки
+        status_code = "500"
+        REQUEST_COUNT.labels(method=method, endpoint=endpoint, status_code=status_code).inc()
+        raise
+
+
+@app.get("/metrics")
+async def metrics():
+    return Response(
+        content=generate_latest(),
+        media_type="text/plain"
+    )
 
 
 if __name__ == "__main__":
